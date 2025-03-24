@@ -9,18 +9,31 @@ class BilibiliLiveSpider(scrapy.Spider):
     name = "bilibili_live"
     allowed_domains = ["bilibili.com"]
     
-    def __init__(self, room_id=None, *args, **kwargs):
+    def __init__(self, room_ids=None, room_id=None, *args, **kwargs):
         super(BilibiliLiveSpider, self).__init__(*args, **kwargs)
-        self.room_id = room_id
+        
+        # 处理单个room_id或多个room_ids
+        if room_ids:
+            # 如果提供了room_ids参数，解析为列表
+            if isinstance(room_ids, str):
+                try:
+                    self.room_ids = json.loads(room_ids)
+                except json.JSONDecodeError:
+                    # 如果不是有效的JSON，尝试以逗号分隔的字符串处理
+                    self.room_ids = [rid.strip() for rid in room_ids.split(',')]
+            else:
+                self.room_ids = room_ids
+        elif room_id:
+            # 向后兼容：如果只提供了单个room_id
+            self.room_ids = [room_id]
+        else:
+            self.room_ids = []
 
     def start_requests(self):
         """构造 API 请求"""
-        if not self.room_id:
-            self.logger.error("必须提供直播间ID(room_id)参数")
+        if not self.room_ids:
+            self.logger.error("必须提供直播间ID(room_id或room_ids)参数")
             return
-        
-        url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={self.room_id}"
-        self.logger.info(f"开始爬取直播间 {self.room_id}")
         
         # 添加指定的请求头
         headers = {
@@ -31,13 +44,17 @@ class BilibiliLiveSpider(scrapy.Spider):
             'sec-ch-ua-platform': '"macOS"'
         }
         
-        yield Request(
-            url=url,
-            callback=self.parse,
-            errback=self.errback_handler,
-            meta={'room_id': self.room_id},
-            headers=headers  # 使用自定义请求头
-        )
+        for room_id in self.room_ids:
+            url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={room_id}"
+            self.logger.info(f"开始爬取直播间 {room_id}")
+            
+            yield Request(
+                url=url,
+                callback=self.parse,
+                errback=self.errback_handler,
+                meta={'room_id': room_id},
+                headers=headers  # 使用自定义请求头
+            )
 
     def parse(self, response):
         """解析 JSON 数据"""
